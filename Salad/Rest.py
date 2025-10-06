@@ -1,84 +1,93 @@
 import aiohttp
-
+import logging
+from typing import Optional, Dict
 try:
-  import orjson
-  HAS_ORJSON = True
+    import orjson as json
+    dumps = lambda x: json.dumps(x).decode('utf-8')
+    loads = json.loads
 except ImportError:
-  import json
-  HAS_ORJSON = False
+    try:
+        import ujson as json
+        dumps = json.dumps
+        loads = json.loads
+    except ImportError:
+        import json
+        dumps = json.dumps
+        loads = json.loads
+
+logger = logging.getLogger(__name__)
+
 
 class Rest:
-  def __init__(self, salad, node):
-    self.salad = salad
-    self.node = node
-    self.headers = {
-      'Authorization': node.auth,
-      'User-Id': '',
-      'Client-Name': node.clientName
-    }
-    self.session = None
+    """Optimized REST client with connection pooling."""
 
-  async def makeRequest(self, method, endpoint, data=None):
-    if not self.session:
-      self.session = aiohttp.ClientSession()
+    __slots__ = ('salad', 'node', 'headers', 'session')
 
-    scheme = 'https' if self.node.ssl else 'http'
-    url = f"{scheme}://{self.node.host}:{self.node.port}{endpoint}"
+    def __init__(self, salad, node):
+        self.salad = salad
+        self.node = node
+        self.headers = {
+            'Authorization': node.auth,
+            'User-Id': '',
+            'Client-Name': node.clientName
+        }
+        self.session = None
 
-    try:
-      if method == 'GET':
-        async with self.session.get(url, headers=self.headers) as resp:
-          if resp.status == 200:
-            if HAS_ORJSON:
-              body = await resp.read()
-              return orjson.loads(body) if body else None
-            else:
-              return await resp.json()
-          return None
+    async def makeRequest(self, method: str, endpoint: str, data: Optional[Dict] = None):
+        """Make HTTP request with connection pooling."""
+        if not self.session or self.session.closed:
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            conn = aiohttp.TCPConnector(
+                limit=100,
+                limit_per_host=30,
+                ttl_dns_cache=300
+            )
+            self.session = aiohttp.ClientSession(
+                connector=conn,
+                timeout=timeout,
+                json_serialize=dumps
+            )
 
-      elif method == 'POST':
-        if HAS_ORJSON and data:
-          json_data = orjson.dumps(data)
-          headers = {**self.headers, 'Content-Type': 'application/json'}
-          async with self.session.post(url, data=json_data, headers=headers) as resp:
-            if resp.status in (200, 201):
-              body = await resp.read()
-              return orjson.loads(body) if body else None
+        scheme = 'https' if self.node.ssl else 'http'
+        url = f"{scheme}://{self.node.host}:{self.node.port}/{endpoint.lstrip('/')}"
+
+        try:
+            if method == 'GET':
+                async with self.session.get(url, headers=self.headers) as resp:
+                    if resp.status == 200:
+                        body = await resp.read()
+                        return loads(body) if body else None
+                    return None
+
+            elif method == 'POST':
+                json_data = dumps(data).encode('utf-8') if data else b'{}'
+                headers = {**self.headers, 'Content-Type': 'application/json'}
+                async with self.session.post(url, data=json_data, headers=headers) as resp:
+                    if resp.status in (200, 201):
+                        body = await resp.read()
+                        return loads(body) if body else None
+                    return None
+
+            elif method == 'PATCH':
+                json_data = dumps(data).encode('utf-8') if data else b'{}'
+                headers = {**self.headers, 'Content-Type': 'application/json'}
+                async with self.session.patch(url, data=json_data, headers=headers) as resp:
+                    if resp.status in (200, 201):
+                        body = await resp.read()
+                        return loads(body) if body else None
+                    if resp.status == 204:
+                        return None
+                    return None
+
+            elif method == 'DELETE':
+                async with self.session.delete(url, headers=self.headers) as resp:
+                    return resp.status in (200, 204)
+
+        except Exception as e:
+            logger.debug(f"Request failed: {e}")
             return None
-        else:
-          async with self.session.post(url, json=data, headers=self.headers) as resp:
-            if resp.status in (200, 201):
-              return await resp.json()
-            return None
 
-      elif method == 'PATCH':
-        if HAS_ORJSON and data:
-          json_data = orjson.dumps(data)
-          headers = {**self.headers, 'Content-Type': 'application/json'}
-          async with self.session.patch(url, data=json_data, headers=headers) as resp:
-            if resp.status in (200, 201):
-              body = await resp.read()
-              return orjson.loads(body) if body else None
-            if resp.status == 204:
-              return None
-            return None
-        else:
-          async with self.session.patch(url, json=data, headers=self.headers) as resp:
-            if resp.status in (200, 201):
-              return await resp.json()
-            if resp.status == 204:
-              return None
-            return None
-
-      elif method == 'DELETE':
-        async with self.session.delete(url, headers=self.headers) as resp:
-          if resp.status in (200, 204):
-            return True
-          return None
-
-    except Exception:
-      return None
-
-  async def close(self):
-    if self.session and not self.session.closed:
-      await self.session.close()
+    async def close(self) -> None:
+        """Close session."""
+        if self.session and not self.session.closed:
+            await self.session.close()

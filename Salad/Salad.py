@@ -35,7 +35,8 @@ class Salad(EventEmitter):
 
     __slots__ = ('nodes', 'client', 'players', '_player_refs', 'initiated',
                  'clientId', 'started', 'opts', 'version', '_listeners',
-                 '_once_listeners', '_max_listeners', '_cleanup_counter')
+                 '_once_listeners', '_max_listeners', '_cleanup_counter',
+                 '_state_manager', '_restoring_players')
 
     def __init__(self, client, nodes, opts=None):
         super().__init__(max_listeners=1000)  # Allow many listeners
@@ -58,6 +59,15 @@ class Salad(EventEmitter):
         self.opts = opts or {}
         self.version = "1.0.0"
 
+        # Initialize state manager
+        self._state_manager = None
+        self._restoring_players = False
+        if opts and opts.get('enableReconnect', True):
+            from .PlayerStateManager import PlayerStateManager
+            state_file = opts.get('stateFile', 'player_states.jsonl')
+            save_interval = opts.get('stateSaveInterval', 5.0)
+            self._state_manager = PlayerStateManager(self, state_file, save_interval)
+
     async def start(self, nodes: List[Dict], userId: str) -> 'Salad':
         """Initialize and connect all nodes."""
         if self.started:
@@ -76,6 +86,10 @@ class Salad(EventEmitter):
 
         # Brief wait for node initialization
         await asyncio.sleep(2.0)
+
+        # Start state manager if available
+        if self.state_manager:
+            await self.state_manager.start()
 
         # Check if any nodes connected successfully
         connected_nodes = [n for n in self.nodes if n.connected and n.sessionId]
@@ -168,6 +182,10 @@ class Salad(EventEmitter):
         if player_tasks:
             await asyncio.gather(*player_tasks, return_exceptions=True)
 
+        # Stop state manager
+        if self.state_manager:
+            await self.state_manager.stop()
+
         # Cleanup nodes
         for node in self.nodes:
             await node._cleanup()
@@ -226,10 +244,12 @@ class Salad(EventEmitter):
         try:
             resp = await node.rest.makeRequest('GET', endpoint)
 
-            if not resp or resp.get('loadType') in ('empty', 'NO_MATCHES'):
-                return EMPTY_TRACKS_RESPONSE
-
-            return self._constructResp(resp, requester, node)
+            if isinstance(resp, dict):
+                if not resp or resp.get('loadType') in ('empty', 'NO_MATCHES'):
+                    return EMPTY_TRACKS_RESPONSE
+                return self._constructResp(resp, requester, node)
+            else:
+                raise Exception('Invalid response type from node')
 
         except Exception as e:
             error_name = getattr(e, 'name', None)
@@ -297,3 +317,46 @@ class Salad(EventEmitter):
                     base['tracks'].append(track)
 
         return base
+
+    async def save_player_states(self) -> int:
+        """
+        Manually save all player states.
+
+        Returns number of states saved.
+        """
+        if not self.started or not self.state_manager:
+            return 0
+
+        return await self.state_manager.save_all_states()
+
+    async def restore_players(self) -> int:
+        """
+        Manually restore all saved players.
+
+        Returns number of players restored.
+        """
+        if not self.started or not self.state_manager:
+            return 0
+
+        self._restoring_players = True
+        try:
+            return await self.state_manager.restore_all_players()
+        finally:
+            self._restoring_players = False
+
+    async def clear_saved_states(self) -> None:
+        """Clear all saved player states."""
+        if not self.started or not self.state_manager:
+            return
+
+        await self.state_manager.clear_states()
+
+    @property
+    def state_manager(self):
+        """Get the state manager instance."""
+        return getattr(self, '_state_manager', None)
+
+    @state_manager.setter
+    def state_manager(self, value):
+        """Set the state manager instance."""
+        self._state_manager = value

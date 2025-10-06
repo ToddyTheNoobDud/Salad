@@ -12,3 +12,4 @@ from .Queue import Queue
 from .Track import Track
 from .EventEmitter import EventEmitter
 from .Filters import Filters
+from .PlayerStateManager import PlayerStateManager
