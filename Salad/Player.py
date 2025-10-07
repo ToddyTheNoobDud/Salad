@@ -309,8 +309,6 @@ class Player:
                 self.playing = True
                 self.paused = False
 
-                self.salad.emit('trackStart', self, item)
-
             except Exception as e:
                 self.playing = False
                 self.current = None
