@@ -1,4 +1,3 @@
-# Node.py - Optimized
 import aiohttp
 import asyncio
 from typing import Dict, Optional, Any
@@ -23,8 +22,6 @@ logger = logging.getLogger(__name__)
 WS_PATH = 'v4/websocket'
 
 class Node:
-    """Optimized Lavalink node with connection pooling and circuit breaker."""
-
     __slots__ = (
         'salad', 'host', 'port', 'auth', 'ssl', 'wsUrl', 'opts',
         'connected', 'info', 'players', 'clientName', 'sessionId',
@@ -50,7 +47,6 @@ class Node:
         self.clientName = 'Salad/v1.1.0'
         self.sessionId: Optional[str] = None
 
-        # Reuse session for connection pooling
         self.session: Optional[aiohttp.ClientSession] = None
         self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self.stats: Optional[Dict] = None
@@ -62,7 +58,6 @@ class Node:
             'Client-Name': self.clientName
         }
 
-        # Reconnection config with circuit breaker
         self._reconnect_attempts = 0
         self._max_reconnect_attempts = opts.get('maxReconnectAttempts', 5) if opts else 5
         self._infinite_reconnect = opts.get('infiniteReconnect', True) if opts else True
@@ -70,30 +65,25 @@ class Node:
         self._base_reconnect_delay = opts.get('baseReconnectDelay', 1.0) if opts else 1.0
         self._max_reconnect_delay = opts.get('maxReconnectDelay', 300.0) if opts else 300.0
 
-        # Circuit breaker
         self._circuit_breaker_threshold = 5
         self._circuit_breaker_failures = 0
         self._circuit_open_until = 0
 
-        # Message buffering for batch processing
         self._msg_buffer = []
 
         from .Rest import Rest
         self.rest = Rest(salad, self)
 
     async def connect(self) -> None:
-        """Connect with circuit breaker protection."""
         loop = asyncio.get_event_loop()
         now = loop.time()
 
-        # Check circuit breaker
         if self._circuit_open_until > now:
             wait = self._circuit_open_until - now
             logger.warning(f"Circuit breaker open, waiting {wait:.1f}s")
             return
 
         try:
-            # Create session once and reuse
             if not self.session or self.session.closed:
                 timeout = aiohttp.ClientTimeout(total=30, connect=10)
                 conn = aiohttp.TCPConnector(
@@ -113,7 +103,7 @@ class Node:
                 headers=self.headers,
                 autoclose=False,
                 heartbeat=30,
-                compress=15  # Enable compression
+                compress=15
             )
 
             self.connected = True
@@ -124,14 +114,12 @@ class Node:
 
             self._listenTask = asyncio.create_task(self._listenWs())
 
-            # Wait for sessionId with timeout
             try:
                 await asyncio.wait_for(self._waitForSession(), timeout=5.0)
             except asyncio.TimeoutError:
                 logger.error("Timeout waiting for session ID")
                 raise
 
-            # Fetch node info
             resp = await self.rest.makeRequest('GET', 'v4/info')
             if isinstance(resp, dict):
               self.info = resp
@@ -142,21 +130,18 @@ class Node:
             self.connected = False
             self._circuit_breaker_failures += 1
 
-            # Open circuit breaker if threshold reached
             if self._circuit_breaker_failures >= self._circuit_breaker_threshold:
-                self._circuit_open_until = loop.time() + 60.0  # 60s cooldown
+                self._circuit_open_until = loop.time() + 60.0
                 logger.error(f"Circuit breaker opened after {self._circuit_breaker_failures} failures")
 
             await self._cleanup()
             self.salad.emit('nodeError', self, e)
 
     async def _waitForSession(self) -> None:
-        """Wait for session ID with async polling."""
         while not self.sessionId:
             await asyncio.sleep(0.05)
 
     async def _listenWs(self) -> None:
-        """Optimized WebSocket listener with batch processing."""
         try:
             if not self.ws:
                 return
@@ -165,7 +150,6 @@ class Node:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     try:
                         data = loads(msg.data)
-                        # Fire and forget - never block
                         asyncio.create_task(self._handleWsMsg(data))
                     except Exception as e:
                         logger.debug(f"WS parse error: {e}")
@@ -181,7 +165,6 @@ class Node:
             self.connected = False
 
             if was_connected and hasattr(self.salad, 'state_manager') and self.salad.state_manager:
-                # Save all player states
                 for guild_id in self.players:
                     self.salad.state_manager.mark_dirty(guild_id)
                 asyncio.create_task(self.salad.state_manager.save_all_states())
@@ -198,7 +181,6 @@ class Node:
                 asyncio.create_task(self._attemptReconnect())
 
     async def _attemptReconnect(self) -> None:
-        """Reconnect with exponential backoff and jitter."""
         max_attempts = float('inf') if self._infinite_reconnect else self._max_reconnect_attempts
 
         while self._reconnect_attempts < max_attempts and not self.connected:
@@ -222,7 +204,6 @@ class Node:
             self.salad.emit('nodeReconnectExhausted', self, self._reconnect_attempts)
 
     def _calculate_backoff_delay(self, attempt: int) -> float:
-        """Exponential backoff with jitter."""
         if attempt == 0:
             return self._base_reconnect_delay
 
@@ -232,7 +213,6 @@ class Node:
         return min(exponential * jitter, self._max_reconnect_delay)
 
     async def _restore_players(self) -> None:
-        """Restore players after reconnection."""
         if not hasattr(self.salad, 'state_manager') or not self.salad.state_manager:
             return
 
@@ -246,7 +226,6 @@ class Node:
             logger.error(f"Player restore failed: {e}")
 
     async def _handleWsMsg(self, data: Dict) -> None:
-        """Fast-path message handler."""
         op = data.get('op')
 
         if op == 'ready':
@@ -258,7 +237,6 @@ class Node:
             self.salad.emit('nodeStats', self, data)
 
         elif op == 'playerUpdate':
-            # FAST PATH - most frequent event
             gid = data.get('guildId')
             if isinstance(gid, str):
                 try:
@@ -275,13 +253,12 @@ class Node:
                 if hasattr(self.salad, 'state_manager') and self.salad.state_manager:
                     self.salad.state_manager.mark_dirty(gid)
 
-                self.salad.emit('playerPositionUpdate', player, state)
+                self.salad.emit('playerUpdate', player, data)
 
         elif op == 'event':
             asyncio.create_task(self._handleEvent(data))
 
     async def _handleEvent(self, data: Dict) -> None:
-        """Handle Lavalink events."""
         gid = data.get('guildId')
         evType = data.get('type')
 
@@ -301,23 +278,29 @@ class Node:
         if hasattr(self.salad, 'state_manager') and self.salad.state_manager:
             self.salad.state_manager.mark_dirty(gid)
 
-        if evType == 'TrackEndEvent':
+        if evType == 'TrackStartEvent':
+            track = player.currentTrackObj
+            if track:
+                self.salad.emit('trackStart', player, track)
+        elif evType == 'TrackEndEvent':
             await self._handleTrackEnd(player, data)
         elif evType in ('TrackStuckEvent', 'TrackExceptionEvent'):
             await self._handleTrackError(player, data)
         elif evType == 'WebSocketClosedEvent':
-            self.salad.emit('playerWebSocketClosed', player, data)
+            self.salad.emit('websocketClosed', player, data)
 
     async def _handleTrackEnd(self, player, data: Dict) -> None:
-        """Handle track end with proper queue management."""
         reason = data.get('reason', 'UNKNOWN').lower()
+        
+        ended_track = player.currentTrackObj
+        
+        self.salad.emit('trackEnd', player, ended_track, reason)
 
         if reason in ('finished', 'load_failed'):
             if player.queue.loop != 'track':
-                consumed = player.queue.consumeNext()
+                player.queue.consumeNext()
                 player.current = None
                 player.currentTrackObj = None
-                self.salad.emit('trackEnd', player, consumed, reason)
 
             player.playing = False
             player.position = 0
@@ -330,20 +313,17 @@ class Node:
                 self.salad.emit('queueEnd', player)
 
         elif reason == 'replaced':
-            # For replaced (skip), queue is already managed by skip method
             pass
 
         else:
             if player.queue.loop != 'track':
-                consumed = player.queue.consumeNext()
-                self.salad.emit('trackEnd', player, consumed, reason)
+                player.queue.consumeNext()
 
             player.current = None
             player.currentTrackObj = None
             player.playing = False
 
     async def _handleTrackError(self, player, data: Dict) -> None:
-        """Handle track errors."""
         consumed = player.queue.consumeNext() if player.queue.loop != 'track' else player.currentTrackObj
 
         player.current = None
@@ -356,13 +336,11 @@ class Node:
             asyncio.create_task(player.play())
 
     def updateClientId(self, cid: str) -> None:
-        """Update client ID."""
         self.headers['User-Id'] = str(cid)
         if self.rest:
             self.rest.headers.update(self.headers)
 
     async def _updatePlayer(self, gid: int, /, *, data: Dict, replace: bool = False) -> Optional[Dict]:
-        """Update player state with connection pooling."""
         noReplace = not replace
         scheme = 'https' if self.ssl else 'http'
         uri = (f"{scheme}://{self.host}:{self.port}/v4/sessions/"
@@ -388,7 +366,6 @@ class Node:
             raise
 
     async def _cleanup(self) -> None:
-        """Cleanup resources."""
         if self._listenTask and not self._listenTask.done():
             self._listenTask.cancel()
             try:
@@ -399,6 +376,5 @@ class Node:
         if self.ws and not self.ws.closed:
             await self.ws.close()
 
-        # Don't close session - reuse it for reconnection
         self.connected = False
         self.sessionId = None
