@@ -14,18 +14,19 @@ class NullQueue:
         self._q = []
         self.loop = None
 
-    def add(self, item): return None
+    def add(self, item): return bool(self)
     def insert(self, item, idx=0): return None
     def clear(self): self._q.clear()
     def getNext(self): return None
     def consumeNext(self): return None
+    def getAll(self): return []
     def __len__(self): return 0
     @property
     def queue(self): return []
 
 
 class Player:
-    """Optimized player with reduced lock contention."""
+    """Optimized player with built-in Discord voice state management."""
 
     __slots__ = (
         'salad', 'nodes', 'guildId', 'voiceChannel', 'textChannel',
@@ -34,7 +35,7 @@ class Player:
         'connected', 'volume', '_voiceState', '_lastVoiceUpdate',
         'paused', 'queue', '_playLock', '_voiceUpdateTask',
         '_destroying', '_voiceCleanupCallback', '_trackEndHandled',
-        '__weakref__'
+        '_kickCheckTask', '_lastVoiceChannelId', '__weakref__'
     )
 
     def __init__(self, salad, nodes, opts: Optional[Dict] = None):
@@ -68,6 +69,8 @@ class Player:
         self._destroying: bool = False
         self._trackEndHandled: bool = False
         self._voiceCleanupCallback: Optional[Callable] = None
+        self._kickCheckTask: Optional[asyncio.Task] = None
+        self._lastVoiceChannelId: Optional[str] = None
 
     def setVoiceCleanupCallback(self, callback: Callable) -> None:
         """Set voice cleanup callback."""
@@ -94,30 +97,88 @@ class Player:
             self.current = None
             self.currentTrackObj = None
             self.position = 0
-            self.deaf = True
+            self.deaf = opts.get('deaf', True)
+            self.mute = opts.get('mute', False)
             self._voiceState = {'voice': {}}
             self._lastVoiceUpdate = {}
 
+        self._lastVoiceChannelId = str(vc) if vc else None
         self.salad.emit('playerConnect', self)
 
     async def handleVoiceStateUpdate(self, data: Dict) -> None:
-        """Handle voice state update."""
+        """Handle voice state update with kick detection."""
         if self.destroyed or self._destroying:
             return
 
         cid = data.get('channel_id')
         sid = data.get('session_id')
+        user_id = data.get('user_id')
+
+        # Only process if it's for this bot
+        if user_id and str(user_id) != str(self.salad.clientId):
+            return
 
         if sid:
             self._voiceState['voice']['session_id'] = sid
 
-        self.voiceChannel = cid if cid else None
+        old_channel = self.voiceChannel
+        new_channel = cid
 
-        if cid is None:
-            self.connected = False
+        # Bot was KICKED/DISCONNECTED (moved to no channel)
+        if old_channel and not new_channel:
+            logger.warning(f'Bot disconnected from voice in guild {self.guildId}')
+
+            # Cancel any existing kick check
+            if self._kickCheckTask and not self._kickCheckTask.done():
+                self._kickCheckTask.cancel()
+
+            # Schedule delayed kick check
+            self._kickCheckTask = asyncio.create_task(self._handleKickCheck())
+            return await self.destroy(cleanup_voice=True)
+
+        # Bot was MOVED to different channel
+        if old_channel and new_channel and old_channel != new_channel:
+            logger.info(f'Bot moved from channel {old_channel} to {new_channel} in guild {self.guildId}')
+            self.voiceChannel = new_channel
+            self._lastVoiceChannelId = new_channel
+
+            # Emit playerMove event
+            self.salad.emit('playerMove', self, old_channel, new_channel)
+
+            # Schedule voice update
+            self._scheduleVoiceUpdate()
+            return
+
+        # Normal channel update
+        self.voiceChannel = new_channel
+        if new_channel:
+            self._lastVoiceChannelId = new_channel
+            self.connected = bool(new_channel)
 
         self._scheduleVoiceUpdate()
         self.salad.emit('playerVoiceStateUpdate', self, data)
+
+    async def _handleKickCheck(self) -> None:
+        """Check if disconnect was a kick after a delay."""
+        try:
+            # Wait to see if it's temporary
+            await asyncio.sleep(1.5)
+
+            # If still no voice channel, it's a kick
+            if not self.voiceChannel and not self.destroyed and not self._destroying:
+                logger.info(f'Confirmed kick for guild {self.guildId}, destroying player')
+
+                # Emit kick event
+                self.salad.emit('playerKick', self)
+
+                # Destroy player (without voice cleanup since already disconnected)
+                await self.destroy(cleanup_voice=False)
+
+        except asyncio.CancelledError:
+            # Reconnected before timeout
+            logger.debug(f'Kick check cancelled for guild {self.guildId}')
+        except Exception as e:
+            logger.error(f'Error in kick check: {e}')
 
     async def handleVoiceServerUpdate(self, data: Dict) -> None:
         """Handle voice server update."""
@@ -126,6 +187,10 @@ class Player:
 
         self._voiceState['voice']['token'] = data['token']
         self._voiceState['voice']['endpoint'] = data['endpoint']
+
+        # Cancel kick check if we got server update (means reconnecting)
+        if self._kickCheckTask and not self._kickCheckTask.done():
+            self._kickCheckTask.cancel()
 
         self._scheduleVoiceUpdate()
         self.salad.emit('playerVoiceServerUpdate', self, data)
@@ -263,12 +328,17 @@ class Player:
 
         prev_track = self.currentTrackObj
 
+        # Stop current track explicitly with REPLACE=True to force stop
         try:
-            await self.nodes._updatePlayer(self.guildId, data={'encodedTrack': None})
-        except Exception:
-            pass
+            await self.nodes._updatePlayer(self.guildId, data={'encodedTrack': None}, replace=True)
+        except Exception as e:
+            logger.debug(f"Skip stop failed: {e}")
 
-        self.queue.consumeNext()
+        # Consume from queue AFTER stopping
+        if self.queue.loop != 'track':
+            self.queue.consumeNext()
+
+        # Clear current track state
         self.current = None
         self.currentTrackObj = None
         self.position = 0
@@ -276,28 +346,38 @@ class Player:
 
         self.salad.emit('trackSkip', self, prev_track)
 
+        # Wait briefly for Lavalink to process stop
+        await asyncio.sleep(0.2)
+
+        # Play next track if available
         if len(self.queue) > 0:
-            await asyncio.sleep(0.1)
             await self.play()
         else:
             self.salad.emit('queueEnd', self)
 
     async def stop(self) -> None:
-        """Stop playback."""
+        """Stop playback and clear queue."""
         if self.destroyed or self._destroying:
             return
 
-        try:
-            await self.nodes._updatePlayer(self.guildId, data={'encodedTrack': None})
-        except Exception:
-            pass
+        # Stop current track first with REPLACE=True to force stop
+        was_playing = self.playing
 
-        self.queue.clear()
+        try:
+            if was_playing or self.current:
+                await self.nodes._updatePlayer(self.guildId, data={'encodedTrack': None}, replace=True)
+        except Exception as e:
+            logger.debug(f"Stop track failed: {e}")
+
+        # Clear state
         self.current = None
         self.currentTrackObj = None
         self.position = 0
         self.playing = False
         self.paused = False
+
+        # Clear queue after stopping
+        self.queue.clear()
 
         self.salad.emit('playerStop', self)
 
@@ -307,7 +387,7 @@ class Player:
             return
 
         try:
-            await self.nodes._updatePlayer(self.guildId, data={'paused': True})
+            await self.nodes._updatePlayer(self.guildId, data={'paused': True}, replace=True)
             self.paused = True
             self.salad.emit('playerPause', self)
         except Exception:
@@ -319,7 +399,7 @@ class Player:
             return
 
         try:
-            await self.nodes._updatePlayer(self.guildId, data={'paused': False})
+            await self.nodes._updatePlayer(self.guildId, data={'paused': False}, replace=True)
             self.paused = False
             self.salad.emit('playerResume', self)
         except Exception:
@@ -352,6 +432,18 @@ class Player:
         except Exception:
             pass
 
+    def addToQueue(self, track) -> bool:
+        """
+        Add a track to the queue.
+
+        Args:
+            track: Track object to add
+
+        Returns:
+            bool: True if added successfully, False otherwise
+        """
+        return self.queue.add(track)
+
     async def destroy(self, *, cleanup_voice: bool = True) -> None:
         """
         Destroy player and cleanup all resources.
@@ -365,6 +457,13 @@ class Player:
             return
 
         self._destroying = True
+
+        if self._kickCheckTask and not self._kickCheckTask.done():
+            self._kickCheckTask.cancel()
+            try:
+                await self._kickCheckTask
+            except asyncio.CancelledError:
+                pass
 
         if cleanup_voice and self._voiceCleanupCallback and self.guildId:
             try:
@@ -406,7 +505,7 @@ class Player:
 
                 try:
                     async with session.delete(uri, headers=headers) as resp:
-                        pass  # Ignore response
+                        pass
                 except Exception:
                     pass
         except Exception:

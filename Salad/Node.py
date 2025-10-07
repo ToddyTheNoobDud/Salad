@@ -330,9 +330,8 @@ class Node:
                 self.salad.emit('queueEnd', player)
 
         elif reason == 'replaced':
-            if player.queue.loop != 'track':
-                consumed = player.queue.consumeNext()
-                self.salad.emit('trackEnd', player, consumed, reason)
+            # For replaced (skip), queue is already managed by skip method
+            pass
 
         else:
             if player.queue.loop != 'track':
