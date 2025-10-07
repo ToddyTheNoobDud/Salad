@@ -25,7 +25,7 @@ pip install git+https://github.com/ToddyTheNoobDud/salad
 Browse detailed examples in the [examples folder](https://github.com/ToddyTheNoobDud/salad/tree/main/examples)
 
 Here's a basic starter code:
-
+```py
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -90,7 +90,7 @@ async def play(interaction: discord.Interaction, query: str):
         await interaction.followup.send(f'➕ Added: **{track.title}**')
 
 bot.run('YOUR_BOT_TOKEN_HERE')
-
+```
 # Common Questions
 
 **How do I configure Lavalink initially?**
