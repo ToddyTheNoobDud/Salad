@@ -1,6 +1,6 @@
 import asyncio
 import weakref
-from typing import Callable, Dict, List, Any, Optional
+from typing import Callable, Dict, List, Any, Optional, Set
 from collections import defaultdict
 
 __all__ = ('EventEmitter',)
@@ -15,21 +15,20 @@ class EventEmitter:
     - Automatic cleanup of dead references
     """
 
-    __slots__ = ('_listeners', '_once_listeners', '_max_listeners', '_cleanup_counter')
+    __slots__ = ('_listeners', '_once_listeners', '_max_listeners', '_cleanup_counter', '_background_tasks')
 
     def __init__(self, max_listeners: int = 100):
-        # Use defaultdict for O(1) access without key checks
         self._listeners: Dict[str, List[Callable]] = defaultdict(list)
         self._once_listeners: Dict[str, List[Callable]] = defaultdict(list)
         self._max_listeners = max_listeners
-        self._cleanup_counter = 0  # Periodic cleanup trigger
+        self._cleanup_counter = 0
+        self._background_tasks: Set[asyncio.Task] = set() 
 
     def on(self, event: str, listener: Callable) -> None:
         """Register a persistent event listener."""
         listeners = self._listeners[event]
 
         if len(listeners) >= self._max_listeners:
-            # Safety: prevent memory exhaustion
             return
 
         listeners.append(listener)
@@ -46,11 +45,9 @@ class EventEmitter:
     def off(self, event: str, listener: Optional[Callable] = None) -> None:
         """Remove listener(s) for an event."""
         if listener is None:
-            # Remove all listeners for this event
             self._listeners.pop(event, None)
             self._once_listeners.pop(event, None)
         else:
-            # Remove specific listener
             if event in self._listeners:
                 try:
                     self._listeners[event].remove(listener)
@@ -68,20 +65,16 @@ class EventEmitter:
         Emit an event to all registered listeners.
         Async listeners are scheduled without blocking.
         """
-        # Fast path: no listeners
         if event not in self._listeners and event not in self._once_listeners:
             return
 
-        # Process persistent listeners
         listeners = self._listeners.get(event, [])
         self._dispatch_to_listeners(listeners, args, kwargs)
 
-        # Process one-time listeners
         once_listeners = self._once_listeners.pop(event, [])
         if once_listeners:
             self._dispatch_to_listeners(once_listeners, args, kwargs)
 
-        # Periodic cleanup of empty event keys (every 100 emits)
         self._cleanup_counter += 1
         if self._cleanup_counter >= 100:
             self._cleanup_counter = 0
@@ -92,27 +85,24 @@ class EventEmitter:
         for listener in listeners:
             try:
                 if asyncio.iscoroutinefunction(listener):
-                    # Schedule async listeners without awaiting
                     try:
-                        asyncio.create_task(listener(*args, **kwargs))
+                        task = asyncio.create_task(listener(*args, **kwargs))
+                        self._background_tasks.add(task)
+                        # Auto-cleanup when done
+                        task.add_done_callback(self._background_tasks.discard)
                     except RuntimeError:
-                        # No event loop running - skip async listener
                         pass
                 else:
-                    # Call sync listeners directly (fast path)
                     listener(*args, **kwargs)
             except Exception:
-                # Silently ignore listener errors to prevent cascade failures
                 pass
 
     def _cleanup_empty_events(self) -> None:
         """Remove event keys with no listeners (memory optimization)."""
-        # Clean up persistent listeners
         empty = [k for k, v in self._listeners.items() if not v]
         for k in empty:
             del self._listeners[k]
 
-        # Clean up once listeners (already cleaned during emit)
         empty = [k for k, v in self._once_listeners.items() if not v]
         for k in empty:
             del self._once_listeners[k]
