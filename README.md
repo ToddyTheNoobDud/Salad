@@ -94,19 +94,19 @@ bot.run('YOUR_BOT_TOKEN_HERE')
 # Common Questions
 
 **How do I configure Lavalink initially?**
-- Salad needs an active Lavalink server to operate. Get the newest Lavalink build [here](https://github.com/freyacodes/Lavalink/releases/latest), set up your `application.yml`, and launch the server prior to starting Salad in your application.
+- For Salad to function, the Lavalink server must be up and running. Get the most recent Lavalink build [here](https://github.com/freyacodes/Lavalink/releases/latest), configure your `application.yml`, and start the server before launching Salad in your application.
 
 **What skills do I need to use Salad?**
-- You need moderate Python knowledge, strong understanding of async programming patterns, and practical discord.py experience. Knowledge of music bot design is beneficial but not essential.
+- You must have a solid grasp of async programming patterns, a moderate level of Python proficiency, and hands-on discord.py experience. While not necessary, familiarity with music bot design is advantageous.
 
 **My application can't locate the Salad package. What should I do?**
-- This usually indicates Salad isn't present in your Python setup. Execute `pip install salad` or follow the [setup commands](#setup-instructions) above. When working with virtual environments, verify you've enabled the appropriate one.
+- This typically means that Salad isn't installed in your Python environment. Use `pip install salad` or adhere to the previously mentioned [setup commands](#setup-instructions). Make sure you have enabled the right virtual environment when working with them.
 
 **Why should I choose Salad over alternative Lavalink packages?**
-- Salad delivers exceptional speed, a user-friendly and thoroughly documented API, consistent updates featuring current Lavalink capabilities, native compatibility with popular streaming services, and a vibrant Discord community prepared to assist.
+- Salad offers great speed, a well-documented and easy-to-use API, regular updates with the latest Lavalink features, native support for popular streaming services, and a lively Discord community ready to help.
 
 **Can Salad work with Lavalink extensions?**
-- Absolutely! Salad keeps complete alignment with the Lavalink specification, including extension compatibility. You can utilize any Lavalink extension smoothly with Salad.
+- Of course! Salad maintains full conformance to the Lavalink specification, including compatibility with extensions. With Salad, you can easily use any Lavalink extension.
 
 # Acknowledgments
 
