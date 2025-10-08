@@ -1,111 +1,79 @@
 import asyncio
-import weakref
 from typing import Callable, Dict, List, Any, Optional, Set
 from collections import defaultdict
+import logging
 
 __all__ = ('EventEmitter',)
+
+logger = logging.getLogger(__name__)
 
 
 class EventEmitter:
     """
-    High-performance event emitter with:
-    - Weak references to prevent memory leaks
-    - Fast O(1) listener lookup
-    - Non-blocking async event dispatch
-    - Automatic cleanup of dead references
+    A straightforward event emitter that supports both synchronous and
+    asynchronous listeners.
     """
 
-    __slots__ = ('_listeners', '_once_listeners', '_max_listeners', '_cleanup_counter', '_background_tasks')
+    __slots__ = ('_listeners', '_once_listeners', '_max_listeners')
 
     def __init__(self, max_listeners: int = 100):
         self._listeners: Dict[str, List[Callable]] = defaultdict(list)
         self._once_listeners: Dict[str, List[Callable]] = defaultdict(list)
         self._max_listeners = max_listeners
-        self._cleanup_counter = 0
-        self._background_tasks: Set[asyncio.Task] = set() 
 
     def on(self, event: str, listener: Callable) -> None:
         """Register a persistent event listener."""
-        listeners = self._listeners[event]
-
-        if len(listeners) >= self._max_listeners:
-            return
-
-        listeners.append(listener)
+        if len(self._listeners[event]) < self._max_listeners:
+            self._listeners[event].append(listener)
 
     def once(self, event: str, listener: Callable) -> None:
         """Register a one-time event listener."""
-        once_listeners = self._once_listeners[event]
-
-        if len(once_listeners) >= self._max_listeners:
-            return
-
-        once_listeners.append(listener)
+        if len(self._once_listeners[event]) < self._max_listeners:
+            self._once_listeners[event].append(listener)
 
     def off(self, event: str, listener: Optional[Callable] = None) -> None:
-        """Remove listener(s) for an event."""
+        """Remove a specific listener or all listeners for an event."""
         if listener is None:
             self._listeners.pop(event, None)
             self._once_listeners.pop(event, None)
-        else:
-            if event in self._listeners:
-                try:
-                    self._listeners[event].remove(listener)
-                except ValueError:
-                    pass
+            return
 
-            if event in self._once_listeners:
-                try:
-                    self._once_listeners[event].remove(listener)
-                except ValueError:
-                    pass
+        if event in self._listeners:
+            try:
+                self._listeners[event].remove(listener)
+            except ValueError:
+                pass  # Listener not found
+
+        if event in self._once_listeners:
+            try:
+                self._once_listeners[event].remove(listener)
+            except ValueError:
+                pass  # Listener not found
 
     def emit(self, event: str, *args: Any, **kwargs: Any) -> None:
         """
-        Emit an event to all registered listeners.
-        Async listeners are scheduled without blocking.
+        Emit an event, calling all registered listeners.
+        Async listeners are scheduled to run in the background.
         """
-        if event not in self._listeners and event not in self._once_listeners:
+        # Gather all listeners for the event
+        all_listeners = (
+            self._listeners.get(event, []) +
+            self._once_listeners.pop(event, [])
+        )
+
+        if not all_listeners:
             return
 
-        listeners = self._listeners.get(event, [])
-        self._dispatch_to_listeners(listeners, args, kwargs)
-
-        once_listeners = self._once_listeners.pop(event, [])
-        if once_listeners:
-            self._dispatch_to_listeners(once_listeners, args, kwargs)
-
-        self._cleanup_counter += 1
-        if self._cleanup_counter >= 100:
-            self._cleanup_counter = 0
-            self._cleanup_empty_events()
-
-    def _dispatch_to_listeners(self, listeners: List[Callable], args: tuple, kwargs: dict) -> None:
-        """Dispatch event to a list of listeners without blocking."""
-        for listener in listeners:
+        for listener in all_listeners:
             try:
                 if asyncio.iscoroutinefunction(listener):
-                    try:
-                        task = asyncio.create_task(listener(*args, **kwargs))
-                        self._background_tasks.add(task)
-                        # Auto-cleanup when done
-                        task.add_done_callback(self._background_tasks.discard)
-                    except RuntimeError:
-                        pass
+                    # Schedule async listeners to run without blocking
+                    asyncio.create_task(listener(*args, **kwargs))
                 else:
+                    # Call sync listeners directly
                     listener(*args, **kwargs)
-            except Exception:
-                pass
-
-    def _cleanup_empty_events(self) -> None:
-        """Remove event keys with no listeners (memory optimization)."""
-        empty = [k for k, v in self._listeners.items() if not v]
-        for k in empty:
-            del self._listeners[k]
-
-        empty = [k for k, v in self._once_listeners.items() if not v]
-        for k in empty:
-            del self._once_listeners[k]
+            except Exception as e:
+                logger.error(f"Error in event listener for '{event}': {e}", exc_info=True)
 
     def remove_all_listeners(self, event: Optional[str] = None) -> None:
         """Remove all listeners for a specific event or all events."""
