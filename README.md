@@ -1,6 +1,6 @@
 # Salad
 
-[![License: GPL](https://img.shields.io/github/license/ToddyTheNoobDud/salad?style=flat-square&logo=gnu&logoColor=white&color=A42E2B&labelColor=2f2f2f)](https://github.com/ToddyTheNoobDud/salad/blob/main/LICENSE) [![Python](https://img.shields.io/pypi/pyversions/salad?style=flat-square&logo=python&logoColor=white&color=3776AB&labelColor=2f2f2f)](https://pypi.org/project/salada/) [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square&logo=python&logoColor=white)](https://github.com/psf/black) [![Discord](https://img.shields.io/discord/899324069235810315?style=flat-square&logo=discord&logoColor=white&color=5865F2&label=Support&labelColor=2f2f2f)](https://discord.gg/UKNDx2JWa5)
+[![License: WTFPL](https://img.shields.io/badge/License-WTFPL-A42E2B?style=flat-square&logo=gnu&logoColor=white&labelColor=2f2f2f)](https://github.com/ToddyTheNoobDud/Salad/blob/main/LICENSE) [![Python](https://img.shields.io/pypi/pyversions/salada?style=flat-square&logo=python&logoColor=white&color=3776AB&labelColor=2f2f2f)](https://pypi.org/project/salada/) [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square&logo=python&logoColor=white)](https://github.com/psf/black) [![Discord](https://img.shields.io/discord/899324069235810315?style=flat-square&logo=discord&logoColor=white&color=5865F2&label=Support&labelColor=2f2f2f)](https://discord.gg/UKNDx2JWa5)
 
 Salad is a lightning-fast, completely asynchronous Python framework designed for effortless [Lavalink](https://github.com/freyacodes/Lavalink) integration with [discord.py](https://github.com/Rapptz/discord.py). With full [Lavalink](https://github.com/freyacodes/Lavalink) specification support, clean API architecture, and robust integrated Spotify and Apple Music functionality, Salad enables creators to craft outstanding music bots effortlessly.
 
@@ -15,11 +15,15 @@ Requires Python 3.8 or newer and current pip version.
 
 > Production Version (Suggested)
 
+```
 pip install salada
+```
 
-> Bleeding Edge (Newest Features)
+> Unstable version of Salad.
 
+```
 pip install git+https://github.com/ToddyTheNoobDud/salad
+```
 
 # Quick Start Guide
 Browse detailed examples in the [examples folder](https://github.com/ToddyTheNoobDud/salad/tree/main/examples)
@@ -89,24 +93,21 @@ async def play(interaction: discord.Interaction, query: str):
     else:
         await interaction.followup.send(f'➕ Added: **{track.title}**')
 
-bot.run('YOUR_BOT_TOKEN_HERE')
+bot.run('putyourtokenhere.')
 ```
 # Common Questions
 
 **How do I configure Lavalink initially?**
-- Salad needs an active Lavalink server to operate. Get the newest Lavalink build [here](https://github.com/freyacodes/Lavalink/releases/latest), set up your `application.yml`, and launch the server prior to starting Salad in your application.
+- To configure Lavalink look [Here](https://github.com/lavalink-devs/Lavalink/blob/master/LavalinkServer/application.yml.example) For plugins look [Here](https://lavalink.dev/plugins.html)
 
 **What skills do I need to use Salad?**
-- You need moderate Python knowledge, strong understanding of async programming patterns, and practical discord.py experience. Knowledge of music bot design is beneficial but not essential.
+- Salad requires you have a little experience with python and discord.py
 
 **My application can't locate the Salad package. What should I do?**
-- This usually indicates Salad isn't present in your Python setup. Execute `pip install salad` or follow the [setup commands](#setup-instructions) above. When working with virtual environments, verify you've enabled the appropriate one.
+- This means you don't have Salad installed, To install it run: `pip install salada` and check if it's installed by doing `pip freeze` and searching for salada.
 
 **Why should I choose Salad over alternative Lavalink packages?**
-- Salad delivers exceptional speed, a user-friendly and thoroughly documented API, consistent updates featuring current Lavalink capabilities, native compatibility with popular streaming services, and a vibrant Discord community prepared to assist.
-
-**Can Salad work with Lavalink extensions?**
-- Absolutely! Salad keeps complete alignment with the Lavalink specification, including extension compatibility. You can utilize any Lavalink extension smoothly with Salad.
+- Salad has a wide variety of features to use aswell as `enableReconnect, infiniteReconnect, maxReconnectAttempts` and autoplay coming soon.
 
 # Acknowledgments
 
