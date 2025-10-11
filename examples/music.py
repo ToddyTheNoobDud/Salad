@@ -21,7 +21,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from Salad import Salad
+from salada import Salad
 import asyncio
 import logging
 
