@@ -9,6 +9,7 @@ Developed as an improved fork of [AquaLink](https://github.com/ToddyTheNoobDud/A
 ## Essential Resources
 - [Discord Community Hub](https://discord.gg/UKNDx2JWa5)
 - [PyPI Distribution](https://pypi.org/project/salada/)
+- [Documentation](https://salad-ffed6391.mintlify.app)
 
 # Setup Instructions
 Requires Python 3.8 or newer and current pip version.
