@@ -1,4 +1,19 @@
-# PlayerStateManager.py - Fixed with voice reconnection callback
+"""DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.
+
+URL: https://www.wtfpl.net/txt/copying/
+"""
 import asyncio
 from pathlib import Path
 from typing import Dict, Optional, Any, List, Callable
@@ -29,7 +44,9 @@ logger = logging.getLogger(__name__)
 
 
 class PlayerStateManager:
-    """Optimized state manager with msgpack and batch operations."""
+    """
+    The Salad player manager.
+    """
 
     __slots__ = ('salad', 'state_file', '_save_task', '_save_interval',
                  '_dirty_players', '_lock', '_batch_size', '_voice_connect_callback')
@@ -47,21 +64,16 @@ class PlayerStateManager:
 
     def set_voice_connect_callback(self, callback: Callable) -> None:
         """
-        Set callback to reconnect to Discord voice channel.
-
-        Callback signature: async def callback(guild_id: int, channel_id: str, deaf: bool, mute: bool) -> bool
-        Should return True if connection initiated successfully.
+        Set the callback function to connect to voice channels.
         """
         self._voice_connect_callback = callback
 
     async def start(self) -> None:
-        """Start periodic save task."""
         if self._save_task and not self._save_task.done():
             return
         self._save_task = asyncio.create_task(self._periodic_save())
 
     async def stop(self) -> None:
-        """Stop and final save."""
         if self._save_task and not self._save_task.done():
             self._save_task.cancel()
             try:
@@ -71,28 +83,23 @@ class PlayerStateManager:
         await self.save_all_states()
 
     def mark_dirty(self, guild_id: int) -> None:
-        """Mark player as dirty."""
         self._dirty_players.add(guild_id)
 
     async def _periodic_save(self) -> None:
-        """Disabled - only save on disconnect."""
         await asyncio.sleep(3600)
 
     def _serialize_player_state(self, player) -> Optional[Dict]:
-        """Fast serialization with minimal checks."""
         if player.destroyed or not player.guildId or not player.voiceChannel:
             return None
 
         try:
             current_track = None
             if player.currentTrackObj:
-                # Store both the encoded track and metadata for restoration
                 track_data = {
-                    'encoded': getattr(player.currentTrackObj, 'track', None),  # Lavalink encoded track
+                    'encoded': getattr(player.currentTrackObj, 'track', None),  
                     'info': getattr(player.currentTrackObj, 'info', {}),
                 }
 
-                # Fallback to URI if no encoded track
                 if not track_data['encoded'] and hasattr(player.currentTrackObj, 'uri'):
                     track_data['uri'] = player.currentTrackObj.uri
 
@@ -100,13 +107,12 @@ class PlayerStateManager:
 
             queue_tracks = []
             if hasattr(player.queue, '_q') and player.queue._q:
-                for track in player.queue._q[:100]:  # Limit to 100 tracks
+                for track in player.queue._q[:100]:  
                     track_data = {
                         'encoded': getattr(track, 'track', None),
                         'info': getattr(track, 'info', {}),
                     }
 
-                    # Fallback to URI
                     if not track_data['encoded'] and hasattr(track, 'uri'):
                         track_data['uri'] = track.uri
 
@@ -131,7 +137,6 @@ class PlayerStateManager:
             return None
 
     async def save_all_states(self) -> int:
-        """Save all states with msgpack."""
         async with self._lock:
             states = []
             for player in self.salad.players.values():
@@ -152,7 +157,6 @@ class PlayerStateManager:
                         with open(self.state_file, 'wb') as f:
                             f.write(msgpack_data)
                 else:
-                    # Fallback to JSON
                     json_data = cast(str, json.dumps(states))
                     if HAS_AIOFILES:
                         async with aiofiles.open(self.state_file, 'w') as f:
@@ -168,7 +172,6 @@ class PlayerStateManager:
                 return 0
 
     async def load_states(self) -> List[Dict]:
-        """Load states with msgpack."""
         if not self.state_file.exists():
             return []
 
@@ -194,7 +197,9 @@ class PlayerStateManager:
             return []
 
     async def restore_player(self, state: Dict, node) -> Optional[Any]:
-        """Restore single player with proper voice reconnection."""
+        """
+        Restore a single player from the given state.
+        """
         try:
             guild_id = int(state['guildId'])
             voice_channel_id = state.get('voiceChannelId')
@@ -203,28 +208,24 @@ class PlayerStateManager:
                 logger.warning(f"No voice channel ID for guild {guild_id}, skipping")
                 return None
 
-            # Destroy existing player completely before restoration
             if guild_id in self.salad.players:
                 existing = self.salad.players[guild_id]
                 logger.info(f"Destroying existing player for guild {guild_id} before restoration")
                 try:
                     await existing.destroy(cleanup_voice=True)
-                    await asyncio.sleep(0.5)  # Wait for cleanup
+                    await asyncio.sleep(0.5) 
                 except Exception as e:
                     logger.debug(f"Error destroying existing player: {e}")
 
-                # Force remove from players dict
                 if guild_id in self.salad.players:
                     del self.salad.players[guild_id]
 
-            # Step 1: Reconnect to Discord voice channel
             if self._voice_connect_callback:
                 logger.info(f"Reconnecting to voice channel {voice_channel_id} in guild {guild_id}")
                 try:
                     deaf = state.get('selfDeaf', False)
                     mute = state.get('selfMute', False)
 
-                    # Call the callback to reconnect to Discord voice
                     voice_connected = await self._voice_connect_callback(
                         guild_id,
                         voice_channel_id,
@@ -236,7 +237,6 @@ class PlayerStateManager:
                         logger.error(f"Failed to reconnect to voice channel for guild {guild_id}")
                         return None
 
-                    # Wait for Discord voice updates to propagate
                     await asyncio.sleep(1.0)
 
                 except Exception as e:
@@ -246,7 +246,6 @@ class PlayerStateManager:
                 logger.warning("No voice connect callback set! Player cannot reconnect to Discord.")
                 return None
 
-            # Step 2: Create player with Lavalink
             opts = {
                 'guildId': guild_id,
                 'voiceChannel': voice_channel_id,
@@ -261,8 +260,7 @@ class PlayerStateManager:
                 logger.error(f"Failed to create player for guild {guild_id}")
                 return None
 
-            # Wait for player to be fully connected
-            max_wait = 10  # seconds
+            max_wait = 10
             waited = 0
             while not player.connected and waited < max_wait:
                 await asyncio.sleep(0.2)
@@ -275,36 +273,29 @@ class PlayerStateManager:
 
             logger.info(f"Player connected for guild {guild_id}")
 
-            # Set volume if not default
             if state.get('volume', 100) != 100:
                 await player.setVolume(state['volume'])
 
-            # Set loop mode
             loop_mode = state.get('queueLoop')
             if loop_mode and loop_mode != 'off':
                 if hasattr(player.queue, 'setLoop'):
                     player.queue.setLoop(loop_mode)
-
-            # Restore tracks
+ 
             current = state.get('currentTrack')
             queue_tracks = state.get('queue', [])
 
             logger.info(f"Restoring {len(queue_tracks)} queue tracks for guild {guild_id}")
 
-            # First, add all queue tracks
             for i, track_data in enumerate(queue_tracks[:self._batch_size]):
                 try:
                     track = None
 
-                    # Try to use encoded track directly if available
                     if track_data.get('encoded'):
-                        # Create track object from encoded data
                         from Salad.Track import Track
                         track = Track({
                             'encoded': track_data['encoded'],
                             'info': track_data.get('info', {})
                         }, requester=None)
-                    # Fallback to resolving URI
                     elif track_data.get('uri'):
                         queue_result = await self.salad.resolve(
                             track_data['uri'],
@@ -321,53 +312,43 @@ class PlayerStateManager:
                 except Exception as e:
                     logger.debug(f"Failed to restore queue track {i+1}: {e}")
 
-            # Then handle current track
             if current:
                 try:
                     logger.info(f"Restoring current track")
                     current_track = None
 
-                    # Try encoded track first
                     if current.get('encoded'):
                         from Salad.Track import Track
                         current_track = Track({
                             'encoded': current['encoded'],
                             'info': current.get('info', {})
                         }, requester=None)
-                    # Fallback to URI resolution
                     elif current.get('uri'):
                         result = await self.salad.resolve(current['uri'], requester=None, nodes=[node])
                         if result and result.get('tracks'):
                             current_track = result['tracks'][0]
 
                     if current_track:
-
-                        # Insert at front of queue
                         player.queue.insert(current_track, 0)
                         logger.info("Inserted current track at front of queue")
 
-                        # Start playback
                         await player.play()
                         logger.info("Started playback")
 
-                        # Wait briefly for track to start
                         await asyncio.sleep(0.5)
 
-                        # Apply saved position if not paused
                         if not state.get('paused', False):
                             position = state.get('position', 0)
-                            if position > 1000:  # Only seek if more than 1 second
+                            if position > 1000:
                                 logger.info(f"Seeking to position {position}ms")
                                 await player.seek(position)
 
-                        # Apply paused state
                         if state.get('paused', False):
                             logger.info("Pausing player")
                             await player.pause()
 
                 except Exception as e:
                     logger.error(f"Failed to restore current track: {e}")
-                    # Try to play from queue if current track fails
                     if len(player.queue) > 0:
                         logger.info("Attempting to play from queue after current track failure")
                         try:
@@ -376,7 +357,6 @@ class PlayerStateManager:
                             logger.error(f"Failed to play from queue: {play_error}")
 
             elif len(player.queue) > 0:
-                # No current track but queue exists - start playing
                 logger.info("No current track, starting playback from queue")
                 try:
                     await player.play()
@@ -392,7 +372,9 @@ class PlayerStateManager:
             return None
 
     async def restore_all_players(self, node=None) -> int:
-        """Restore all with concurrency limit."""
+        """
+        Restores all players from the player_states file.
+        """
         states = await self.load_states()
         if not states:
             return 0
@@ -402,8 +384,7 @@ class PlayerStateManager:
         if not node:
             return 0
 
-        # Batch restore with concurrency limit
-        semaphore = asyncio.Semaphore(5)  # Lower concurrency for voice connections
+        semaphore = asyncio.Semaphore(5)
 
         async def restore_with_limit(state):
             async with semaphore:
@@ -417,7 +398,6 @@ class PlayerStateManager:
         return restored
 
     async def clear_states(self) -> None:
-        """Clear saved states."""
         try:
             if self.state_file.exists():
                 self.state_file.unlink()

@@ -1,3 +1,19 @@
+"""DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.
+
+URL: https://www.wtfpl.net/txt/copying/
+"""
 from typing import Optional, Dict, Any, Callable
 import asyncio
 import aiohttp
@@ -114,7 +130,6 @@ class Player:
         sid = data.get('session_id')
         user_id = data.get('user_id')
 
-        # Only process if it's for this bot
         if user_id and str(user_id) != str(self.salad.clientId):
             return
 
@@ -124,32 +139,25 @@ class Player:
         old_channel = self.voiceChannel
         new_channel = cid
 
-        # Bot was KICKED/DISCONNECTED (moved to no channel)
         if old_channel and not new_channel:
             logger.warning(f'Bot disconnected from voice in guild {self.guildId}')
 
-            # Cancel any existing kick check
             if self._kickCheckTask and not self._kickCheckTask.done():
                 self._kickCheckTask.cancel()
 
-            # Schedule delayed kick check
             self._kickCheckTask = asyncio.create_task(self._handleKickCheck())
             return await self.destroy(cleanup_voice=True)
 
-        # Bot was MOVED to different channel
         if old_channel and new_channel and old_channel != new_channel:
             logger.info(f'Bot moved from channel {old_channel} to {new_channel} in guild {self.guildId}')
             self.voiceChannel = new_channel
             self._lastVoiceChannelId = new_channel
 
-            # Emit playerMove event
             self.salad.emit('playerMove', self, old_channel, new_channel)
 
-            # Schedule voice update
             self._scheduleVoiceUpdate()
             return
 
-        # Normal channel update
         self.voiceChannel = new_channel
         if new_channel:
             self._lastVoiceChannelId = new_channel
@@ -161,21 +169,16 @@ class Player:
     async def _handleKickCheck(self) -> None:
         """Check if disconnect was a kick after a delay."""
         try:
-            # Wait to see if it's temporary
             await asyncio.sleep(1.5)
 
-            # If still no voice channel, it's a kick
             if not self.voiceChannel and not self.destroyed and not self._destroying:
                 logger.info(f'Confirmed kick for guild {self.guildId}, destroying player')
 
-                # Emit kick event
                 self.salad.emit('playerKick', self)
 
-                # Destroy player (without voice cleanup since already disconnected)
                 await self.destroy(cleanup_voice=False)
 
         except asyncio.CancelledError:
-            # Reconnected before timeout
             logger.debug(f'Kick check cancelled for guild {self.guildId}')
         except Exception as e:
             logger.error(f'Error in kick check: {e}')
@@ -188,7 +191,6 @@ class Player:
         self._voiceState['voice']['token'] = data['token']
         self._voiceState['voice']['endpoint'] = data['endpoint']
 
-        # Cancel kick check if we got server update (means reconnecting)
         if self._kickCheckTask and not self._kickCheckTask.done():
             self._kickCheckTask.cancel()
 
@@ -328,17 +330,14 @@ class Player:
 
         prev_track = self.currentTrackObj
 
-        # Stop current track explicitly with REPLACE=True to force stop
         try:
             await self.nodes._updatePlayer(self.guildId, data={'encodedTrack': None}, replace=True)
         except Exception as e:
             logger.debug(f"Skip stop failed: {e}")
 
-        # Consume from queue AFTER stopping
         if self.queue.loop != 'track':
             self.queue.consumeNext()
 
-        # Clear current track state
         self.current = None
         self.currentTrackObj = None
         self.position = 0
@@ -346,10 +345,8 @@ class Player:
 
         self.salad.emit('trackSkip', self, prev_track)
 
-        # Wait briefly for Lavalink to process stop
         await asyncio.sleep(0.2)
 
-        # Play next track if available
         if len(self.queue) > 0:
             await self.play()
         else:
@@ -360,7 +357,6 @@ class Player:
         if self.destroyed or self._destroying:
             return
 
-        # Stop current track first with REPLACE=True to force stop
         was_playing = self.playing
 
         try:
@@ -369,14 +365,11 @@ class Player:
         except Exception as e:
             logger.debug(f"Stop track failed: {e}")
 
-        # Clear state
         self.current = None
         self.currentTrackObj = None
         self.position = 0
         self.playing = False
         self.paused = False
-
-        # Clear queue after stopping
         self.queue.clear()
 
         self.salad.emit('playerStop', self)

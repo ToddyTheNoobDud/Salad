@@ -1,4 +1,19 @@
-# Node.py - Optimized
+"""DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.
+
+URL: https://www.wtfpl.net/txt/copying/
+"""
 import aiohttp
 import asyncio
 from typing import Dict, Optional, Any
@@ -43,14 +58,11 @@ class Node:
         self.ssl = connOpts.get('ssl', False)
         self.wsUrl = f"ws{'s' if self.ssl else ''}://{self.host}:{self.port}/{WS_PATH}"
         self.opts = opts or {}
-
         self.connected = False
         self.info: Optional[Dict] = None
         self.players: Dict[int, Any] = {}
         self.clientName = 'Salad/v1.1.0'
         self.sessionId: Optional[str] = None
-
-        # Reuse session for connection pooling
         self.session: Optional[aiohttp.ClientSession] = None
         self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self.stats: Optional[Dict] = None
@@ -62,20 +74,15 @@ class Node:
             'Client-Name': self.clientName
         }
 
-        # Reconnection config with circuit breaker
         self._reconnect_attempts = 0
         self._max_reconnect_attempts = opts.get('maxReconnectAttempts', 5) if opts else 5
         self._infinite_reconnect = opts.get('infiniteReconnect', True) if opts else True
         self._reconnecting = False
         self._base_reconnect_delay = opts.get('baseReconnectDelay', 1.0) if opts else 1.0
         self._max_reconnect_delay = opts.get('maxReconnectDelay', 300.0) if opts else 300.0
-
-        # Circuit breaker
         self._circuit_breaker_threshold = 5
         self._circuit_breaker_failures = 0
         self._circuit_open_until = 0
-
-        # Message buffering for batch processing
         self._msg_buffer = []
 
         from .Rest import Rest
@@ -86,24 +93,15 @@ class Node:
         loop = asyncio.get_event_loop()
         now = loop.time()
 
-        # Check circuit breaker
         if self._circuit_open_until > now:
             wait = self._circuit_open_until - now
             logger.warning(f"Circuit breaker open, waiting {wait:.1f}s")
             return
 
         try:
-            # Create session once and reuse
             if not self.session or self.session.closed:
                 timeout = aiohttp.ClientTimeout(total=30, connect=10)
-                conn = aiohttp.TCPConnector(
-                    limit=100,
-                    limit_per_host=30,
-                    ttl_dns_cache=300,
-                    enable_cleanup_closed=True
-                )
                 self.session = aiohttp.ClientSession(
-                    connector=conn,
                     timeout=timeout,
                     json_serialize=dumps
                 )
@@ -113,7 +111,7 @@ class Node:
                 headers=self.headers,
                 autoclose=False,
                 heartbeat=30,
-                compress=15  # Enable compression
+                compress=15
             )
 
             self.connected = True
@@ -124,14 +122,12 @@ class Node:
 
             self._listenTask = asyncio.create_task(self._listenWs())
 
-            # Wait for sessionId with timeout
             try:
                 await asyncio.wait_for(self._waitForSession(), timeout=5.0)
             except asyncio.TimeoutError:
                 logger.error("Timeout waiting for session ID")
                 raise
 
-            # Fetch node info
             resp = await self.rest.makeRequest('GET', 'v4/info')
             if isinstance(resp, dict):
               self.info = resp
@@ -142,9 +138,8 @@ class Node:
             self.connected = False
             self._circuit_breaker_failures += 1
 
-            # Open circuit breaker if threshold reached
             if self._circuit_breaker_failures >= self._circuit_breaker_threshold:
-                self._circuit_open_until = loop.time() + 60.0  # 60s cooldown
+                self._circuit_open_until = loop.time() + 60.0  
                 logger.error(f"Circuit breaker opened after {self._circuit_breaker_failures} failures")
 
             await self._cleanup()
@@ -165,7 +160,6 @@ class Node:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     try:
                         data = loads(msg.data)
-                        # Fire and forget - never block
                         asyncio.create_task(self._handleWsMsg(data))
                     except Exception as e:
                         logger.debug(f"WS parse error: {e}")
@@ -181,7 +175,6 @@ class Node:
             self.connected = False
 
             if was_connected and hasattr(self.salad, 'state_manager') and self.salad.state_manager:
-                # Save all player states
                 for guild_id in self.players:
                     self.salad.state_manager.mark_dirty(guild_id)
                 asyncio.create_task(self.salad.state_manager.save_all_states())
@@ -258,7 +251,6 @@ class Node:
             self.salad.emit('nodeStats', self, data)
 
         elif op == 'playerUpdate':
-            # FAST PATH - most frequent event
             gid = data.get('guildId')
             if isinstance(gid, str):
                 try:
@@ -330,7 +322,6 @@ class Node:
                 self.salad.emit('queueEnd', player)
 
         elif reason == 'replaced':
-            # For replaced (skip), queue is already managed by skip method
             pass
 
         else:
@@ -399,6 +390,5 @@ class Node:
         if self.ws and not self.ws.closed:
             await self.ws.close()
 
-        # Don't close session - reuse it for reconnection
         self.connected = False
         self.sessionId = None

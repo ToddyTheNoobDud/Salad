@@ -1,3 +1,19 @@
+"""DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.
+
+URL: https://www.wtfpl.net/txt/copying/
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -40,7 +56,6 @@ def build_equalizer(bands: Sequence[Tuple[int, float]]) -> Dict[str, Any]:
         except Exception:
             raise ValueError("band index must be an integer")
         g = float(gain)
-        # Many lavalink implementations accept -0.25 .. 1.0 range, but clamp generously
         g = _clamp(g, -1.0, 10.0)
         eq.append({"band": bi, "gain": g})
     return {"equalizer": eq}
@@ -114,7 +129,6 @@ def build_low_pass(smoothing: float = 20.0) -> Dict[str, Any]:
 
 
 def build_volume(volume: float) -> Dict[str, Any]:
-    # volume is a multiplier: 1.0 = 100%
     return {"volume": float(volume)}
 
 
