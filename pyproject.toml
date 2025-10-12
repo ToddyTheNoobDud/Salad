@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "salada"
+version = "1.1.0"
+description = "A performant lavalink client for python"
+readme = "README.md"
+readme-content-type = "text/markdown"
+requires-python = ">=3.8"
+authors = [
+    {name = "ToddyTheNoobDud"}
+]
+dependencies = [
+    "aiohttp",
+]
+
+[project.optional-dependencies]
+fast = ["orjson", "msgpack", "aiofiles"]
+speed = ["ujson"]
+
+[project.urls]
+Homepage = "https://github.com/ToddyTheNoobDud/Salad"
+Repository = "https://github.com/ToddyTheNoobDud/Salad.git"
+Issues = "https://github.com/ToddyTheNoobDud/Salad/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["salada*"]
