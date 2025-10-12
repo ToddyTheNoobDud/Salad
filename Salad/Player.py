@@ -374,17 +374,27 @@ class Player:
 
         self.salad.emit('playerStop', self)
 
-    async def pause(self) -> None:
-        """Pause playback."""
-        if self.destroyed or self._destroying or not self.playing:
+    async def pause(self, paused: bool = True) -> None:
+        """
+        Set pause state.
+        
+        Args:
+            paused: True to pause, False to resume. Defaults to True.
+        """
+        if self.destroyed or self._destroying:
             return
 
-        try:
-            await self.nodes._updatePlayer(self.guildId, data={'paused': True}, replace=True)
-            self.paused = True
-            self.salad.emit('playerPause', self)
-        except Exception:
-            pass
+        if paused:
+            if not self.playing:
+                return
+            try:
+                await self.nodes._updatePlayer(self.guildId, data={'paused': True}, replace=True)
+                self.paused = True
+                self.salad.emit('playerPause', self)
+            except Exception:
+                pass
+        else:
+            await self.resume()
 
     async def resume(self) -> None:
         """Resume playback."""
