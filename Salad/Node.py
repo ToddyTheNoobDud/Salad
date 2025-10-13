@@ -19,6 +19,8 @@ import asyncio
 from typing import Dict, Optional, Any
 import logging
 from .Lyrics import Lyrics
+from .Autoplay import sc_autoplay, sp_autoplay, yt_autoplay
+from .models.tracks import AudioTrack
 
 try:
     import orjson as json
@@ -322,9 +324,12 @@ class Node:
             if player.queue._q or player.queue.loop == 'track':
                 asyncio.create_task(player.play())
             else:
-                player.current = None
-                player.currentTrackObj = None
-                self.salad.emit('queueEnd', player)
+                if player.autoplay:
+                    await self._handle_autoplay(player)
+                else:
+                    player.current = None
+                    player.currentTrackObj = None
+                    self.salad.emit('queueEnd', player)
 
         elif reason == 'replaced':
             pass
@@ -382,6 +387,42 @@ class Node:
         except Exception as e:
             logger.debug(f"Player update error: {e}")
             raise
+
+    async def _handle_autoplay(self, player):
+        """Handles the autoplay logic."""
+        last_track = player.queue.previous[-1] if player.queue.previous else None
+        if not last_track:
+            self.salad.emit('queueEnd', player)
+            return
+
+        next_track = None
+        source = getattr(last_track, 'sourceName', 'youtube')
+
+        try:
+            if source == 'soundcloud':
+                recommended_urls = await sc_autoplay(last_track.uri)
+                if recommended_urls:
+                    result = await self.salad.resolve(recommended_urls[0], requester=last_track.requester)
+                    if result and result.get('tracks'):
+                        next_track = result['tracks'][0]
+            elif source == 'spotify':
+                recommended_tracks = await sp_autoplay(player, last_track)
+                if recommended_tracks:
+                    next_track = recommended_tracks[0]
+            else: # Default to YouTube
+                recommended_tracks = await yt_autoplay(player, last_track)
+                if recommended_tracks:
+                    next_track = recommended_tracks[0]
+
+            if next_track:
+                player.addToQueue(next_track)
+                self.salad.emit('autoplayTrack', player, next_track)
+                await player.play()
+            else:
+                self.salad.emit('queueEnd', player)
+        except Exception as e:
+            logger.error(f"Autoplay failed: {e}")
+            self.salad.emit('queueEnd', player)
 
     async def _cleanup(self) -> None:
         """Cleanup resources."""
