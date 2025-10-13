@@ -26,6 +26,7 @@ class Track:
     self.title = info.get('title') or data.get('title', '')
     self.uri = info.get('uri') or data.get('uri', '')
     self.sourceName = info.get('sourceName') or data.get('sourceName', '')
+    self.isrc = info.get('isrc') or data.get('isrc', '')
     self.requester = requester
 
   def resolve(self, salad):
@@ -36,3 +37,4 @@ class Track:
 
   def __repr__(self):
     return f"Track(title='{self.title}', author='{self.author}', length={self.length})"
+
