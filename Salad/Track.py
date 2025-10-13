@@ -14,6 +14,8 @@
 
 URL: https://www.wtfpl.net/txt/copying/
 """
+from typing import Optional, Tuple
+
 class Track:
   def __init__(self, data, requester=None):
     self.track = data.get('track') or data.get('encoded')
@@ -28,6 +30,30 @@ class Track:
     self.sourceName = info.get('sourceName') or data.get('sourceName', '')
     self.isrc = info.get('isrc') or data.get('isrc', '')
     self.requester = requester
+    self._lyrics = None
+    self._lyrics_synced = False
+
+  @property
+  def lyrics(self) -> Optional[str]:
+    return self._lyrics
+
+  @property
+  def lyrics_synced(self) -> bool:
+    return self._lyrics_synced
+
+  async def fetch_lyrics(self, player) -> Tuple[Optional[str], bool]:
+    """Fetches lyrics for the track and caches them."""
+    if self._lyrics:
+        return self._lyrics, self._lyrics_synced
+
+    lyrics_handler = player.get_lyrics_handler()
+    if not lyrics_handler:
+        return None, False
+
+    lyrics, is_synced, _, _ = await lyrics_handler.get_synced_lyrics(self.title, self.author)
+    self._lyrics = lyrics
+    self._lyrics_synced = is_synced
+    return self._lyrics, self._lyrics_synced
 
   def resolve(self, salad):
     return self.track
@@ -37,4 +63,3 @@ class Track:
 
   def __repr__(self):
     return f"Track(title='{self.title}', author='{self.author}', length={self.length})"
-
