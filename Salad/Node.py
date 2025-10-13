@@ -18,6 +18,7 @@ import aiohttp
 import asyncio
 from typing import Dict, Optional, Any
 import logging
+from .Lyrics import Lyrics
 
 try:
     import orjson as json
@@ -47,7 +48,8 @@ class Node:
         '_reconnect_attempts', '_max_reconnect_attempts', '_infinite_reconnect',
         '_reconnecting', '_base_reconnect_delay', '_max_reconnect_delay',
         '_circuit_breaker_threshold', '_circuit_breaker_failures',
-        '_circuit_open_until', '_msg_buffer'
+        '_circuit_open_until', '_msg_buffer',
+        'spotify_client_id', 'spotify_client_secret', 'lyrics'
     )
 
     def __init__(self, salad, connOpts: Dict, opts: Optional[Dict] = None):
@@ -56,6 +58,8 @@ class Node:
         self.port = connOpts.get('port', 8000)
         self.auth = connOpts.get('auth', 'youshallnotpass')
         self.ssl = connOpts.get('ssl', False)
+        self.spotify_client_id = connOpts.get('spotify_client_id')
+        self.spotify_client_secret = connOpts.get('spotify_client_secret')
         self.wsUrl = f"ws{'s' if self.ssl else ''}://{self.host}:{self.port}/{WS_PATH}"
         self.opts = opts or {}
         self.connected = False
@@ -87,6 +91,7 @@ class Node:
 
         from .Rest import Rest
         self.rest = Rest(salad, self)
+        self.lyrics = Lyrics(self) if self.spotify_client_id and self.spotify_client_secret else None
 
     async def connect(self) -> None:
         """Connect with circuit breaker protection."""
