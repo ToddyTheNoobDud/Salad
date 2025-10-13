@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any, Callable
 import asyncio
 import aiohttp
 import logging
+from .Queue import Queue
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class Player:
         'connected', 'volume', '_voiceState', '_lastVoiceUpdate',
         'paused', 'queue', '_playLock', '_voiceUpdateTask',
         '_destroying', '_voiceCleanupCallback', '_trackEndHandled',
-        '_kickCheckTask', '_lastVoiceChannelId', '__weakref__'
+        '_kickCheckTask', '_lastVoiceChannelId', '_voice_client', '__weakref__'
     )
 
     def __init__(self, salad, nodes, opts: Optional[Dict] = None):
@@ -63,7 +64,6 @@ class Player:
         self.textChannel: Optional[str] = opts.get('textChannel')
         self.mute: bool = opts.get('mute', False)
         self.deaf: bool = opts.get('deaf', True)
-
         self.playing: bool = False
         self.destroyed: bool = False
         self.current: Optional[str] = None
@@ -74,11 +74,8 @@ class Player:
         self.connected: bool = False
         self.volume: int = opts.get('volume', 100)
         self.paused: bool = False
-
         self._voiceState: Dict = {'voice': {}}
         self._lastVoiceUpdate: Dict = {}
-
-        from .Queue import Queue
         self.queue = Queue(self)
         self._playLock = asyncio.Lock()
         self._voiceUpdateTask: Optional[asyncio.Task] = None
@@ -87,10 +84,39 @@ class Player:
         self._voiceCleanupCallback: Optional[Callable] = None
         self._kickCheckTask: Optional[asyncio.Task] = None
         self._lastVoiceChannelId: Optional[str] = None
+        self._voice_client: Optional[Any] = None 
 
     def setVoiceCleanupCallback(self, callback: Callable) -> None:
         """Set voice cleanup callback."""
         self._voiceCleanupCallback = callback
+
+    def setVoiceClient(self, voice_client: Any) -> None:
+        """
+        Set the voice client reference for this player.
+        
+        Args:
+            voice_client: SaladVoiceClient instance
+        """
+        self._voice_client = voice_client
+        logger.debug(f"Voice client set for player in guild {self.guildId}")
+
+    def getVoiceClient(self) -> Optional[Any]:
+        """
+        Get the voice client for this player.
+        
+        Returns:
+            Optional[Any]: SaladVoiceClient instance or None
+        """
+        if self._voice_client:
+            return self._voice_client
+        
+        if self.salad and self.salad.client and self.guildId:
+            guild = self.salad.client.get_guild(self.guildId)
+            if guild and guild.voice_client:
+                self._voice_client = guild.voice_client
+                return self._voice_client
+        
+        return None
 
     def isVoiceReady(self) -> bool:
         """Check if voice ready."""
@@ -98,7 +124,10 @@ class Player:
         return bool(vd.get('session_id') and vd.get('token') and vd.get('endpoint'))
 
     async def connect(self, opts: Optional[Dict] = None) -> None:
-        """Connect to voice."""
+        """
+        Connect to voice. This now handles voice state updates that come from
+        Discord through the SaladVoiceClient.
+        """
         opts = opts or {}
         vc = opts.get('vc', self.voiceChannel)
         if not vc:
@@ -119,10 +148,18 @@ class Player:
             self._lastVoiceUpdate = {}
 
         self._lastVoiceChannelId = str(vc) if vc else None
+        
+        voice_client = self.getVoiceClient()
+        if voice_client:
+            logger.info(f"Voice client connected for guild {self.guildId}")
+        
         self.salad.emit('playerConnect', self)
 
     async def handleVoiceStateUpdate(self, data: Dict) -> None:
-        """Handle voice state update with kick detection."""
+        """
+        Handle voice state update with kick detection.
+        This is called by SaladVoiceClient when Discord sends voice state updates.
+        """
         if self.destroyed or self._destroying:
             return
 
@@ -184,7 +221,10 @@ class Player:
             logger.error(f'Error in kick check: {e}')
 
     async def handleVoiceServerUpdate(self, data: Dict) -> None:
-        """Handle voice server update."""
+        """
+        Handle voice server update.
+        This is called by SaladVoiceClient when Discord sends voice server updates.
+        """
         if self.destroyed or self._destroying:
             return
 
@@ -254,6 +294,7 @@ class Player:
                 'endpoint': endpoint
             }
             self.salad.emit('playerVoiceUpdate', self)
+            logger.info(f"Voice update dispatched to Lavalink for guild {self.guildId}")
         except Exception as e:
             self.connected = False
             logger.debug(f"Voice update failed: {e}")
@@ -267,6 +308,7 @@ class Player:
                 return
 
             if not self.isVoiceReady() or not self.connected:
+                logger.warning(f"Cannot play - voice not ready for guild {self.guildId}")
                 return
 
             if len(self.queue) == 0:
@@ -312,6 +354,7 @@ class Player:
                 self.paused = False
 
                 self.salad.emit('trackStart', self, item)
+                logger.info(f"Started playing track in guild {self.guildId}")
 
             except Exception as e:
                 self.playing = False
@@ -542,6 +585,7 @@ class Player:
         self.paused = False
         self.connected = False
         self.volume = 100
+        self._voice_client = None
 
         if cleanup_voice and self._voiceCleanupCallback and self.guildId:
             try:
@@ -567,3 +611,4 @@ class Player:
             self.salad.destroyPlayer(self.guildId)
 
         self.salad.emit('playerDestroy', self, None)
+        logger.info(f"Player destroyed for guild {self.guildId}")

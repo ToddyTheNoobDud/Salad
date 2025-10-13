@@ -2,7 +2,7 @@ __title__ = 'Salad'
 __author__ = 'ToddyTheNoobDud'
 __contibutors__ = 'southctrl'
 __version__ = '1.1.0'
-__all__ = ['Rest', 'Node', 'Salad', 'Player', 'Queue', 'Track', 'EventEmitter', 'Filters']
+__all__ = ['Rest', 'Node', 'Salad', 'Player', 'Queue', 'Track', 'EventEmitter', 'Filters', 'PlayerStateManager', 'SaladVoiceClient']
 
 from .Rest import Rest
 from .Node import Node
@@ -13,3 +13,4 @@ from .Track import Track
 from .EventEmitter import EventEmitter
 from .Filters import Filters
 from .PlayerStateManager import PlayerStateManager
+from .voiceclient import SaladVoiceClient
