@@ -16,7 +16,7 @@ URL: https://www.wtfpl.net/txt/copying/
 """
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
-from Salad.Player import Player
+from ..Player import Player
 
 
 class AudioInfo(dict):
