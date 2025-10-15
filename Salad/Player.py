@@ -14,11 +14,15 @@
 
 URL: https://www.wtfpl.net/txt/copying/
 """
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
 import asyncio
 import aiohttp
 import logging
 from .Queue import Queue
+
+if TYPE_CHECKING:
+    from .models.tracks import AudioTrack
+    from .Node import Node
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +56,11 @@ class Player:
         'connected', 'volume', '_voiceState', '_lastVoiceUpdate',
         'paused', 'queue', '_playLock', '_voiceUpdateTask',
         '_destroying', '_voiceCleanupCallback', '_trackEndHandled',
-        '_kickCheckTask', '_lastVoiceChannelId', '_voice_client', '__weakref__'
+        '_kickCheckTask', '_lastVoiceChannelId', '_voice_client', 'autoplay',
+        '__weakref__'
     )
 
-    def __init__(self, salad, nodes, opts: Optional[Dict] = None):
+    def __init__(self, salad, nodes: 'Node', opts: Optional[Dict] = None):
         opts = opts or {}
         self.salad = salad
         self.nodes = nodes
@@ -67,13 +72,14 @@ class Player:
         self.playing: bool = False
         self.destroyed: bool = False
         self.current: Optional[str] = None
-        self.currentTrackObj: Optional[Any] = None
+        self.currentTrackObj: Optional['AudioTrack'] = None
         self.position: int = 0
         self.timestamp: int = 0
         self.ping: int = 0
         self.connected: bool = False
         self.volume: int = opts.get('volume', 100)
         self.paused: bool = False
+        self.autoplay: bool = False
         self._voiceState: Dict = {'voice': {}}
         self._lastVoiceUpdate: Dict = {}
         self.queue = Queue(self)
@@ -478,7 +484,7 @@ class Player:
         except Exception:
             pass
 
-    def addToQueue(self, track) -> bool:
+    def addToQueue(self, track: 'AudioTrack') -> bool:
         """
         Add a track to the queue.
 
@@ -612,3 +618,14 @@ class Player:
 
         self.salad.emit('playerDestroy', self, None)
         logger.info(f"Player destroyed for guild {self.guildId}")
+
+    def get_lyrics_handler(self):
+        """Returns the lyrics handler from the node if available."""
+        if self.nodes and hasattr(self.nodes, 'lyrics'):
+            return self.nodes.lyrics
+        return None
+
+    def toggle_autoplay(self) -> bool:
+        """Toggles the autoplay state."""
+        self.autoplay = not self.autoplay
+        return self.autoplay

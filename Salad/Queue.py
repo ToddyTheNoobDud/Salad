@@ -14,29 +14,34 @@
 
 URL: https://www.wtfpl.net/txt/copying/
 """
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 import random
+
+if TYPE_CHECKING:
+    from .Player import Player
+    from .models.tracks import AudioTrack, TrackList
+
 
 class Queue:
     """Optimized queue with __slots__ and fast operations."""
 
     __slots__ = ('player', '_q', 'loop', 'previous', '_maxPreviousSize')
 
-    def __init__(self, player):
+    def __init__(self, player: 'Player'):
         self.player = player
-        self._q: List = []
+        self._q: List['AudioTrack'] = []
         self.loop: Optional[str] = None
-        self.previous: List = []
+        self.previous: List['AudioTrack'] = []
         self._maxPreviousSize = 10
 
-    def add(self, track) -> bool:
+    def add(self, track: 'AudioTrack') -> bool:
         """Add track to queue."""
         if not track:
             return False
         self._q.append(track)
         return True
 
-    def insert(self, track, position: int = 0) -> bool:
+    def insert(self, track: 'AudioTrack', position: int = 0) -> bool:
         """Insert track at position."""
         if not track:
             return False
@@ -44,7 +49,7 @@ class Queue:
         self._q.insert(position, track)
         return True
 
-    def remove(self, index: int):
+    def remove(self, index: int) -> Optional['AudioTrack']:
         """Remove track at index."""
         if 0 <= index < len(self._q):
             return self._q.pop(index)
@@ -59,7 +64,7 @@ class Queue:
         """Shuffle queue in-place."""
         random.shuffle(self._q)
 
-    def getNext(self):
+    def getNext(self) -> Optional['AudioTrack']:
         """Get next track without removing."""
         if self.loop == 'track' and self.player.currentTrackObj:
             return self.player.currentTrackObj
@@ -73,7 +78,7 @@ class Queue:
 
         return self._q[0]
 
-    def consumeNext(self):
+    def consumeNext(self) -> Optional['AudioTrack']:
         """Remove and return next track."""
         if not self._q:
             return None
@@ -86,13 +91,13 @@ class Queue:
 
         return consumed
 
-    def peek(self, index: int = 0):
+    def peek(self, index: int = 0) -> Optional['AudioTrack']:
         """Look at track without removing."""
         if 0 <= index < len(self._q):
             return self._q[index]
         return None
 
-    def getAll(self) -> List:
+    def getAll(self) -> 'TrackList':
         """Get copy of all tracks."""
         return self._q.copy()
 
