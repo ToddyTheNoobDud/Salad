@@ -32,7 +32,7 @@ __all__ = ('Salad', 'DEFAULT_CONFIGS', 'EMPTY_TRACKS_RESPONSE')
 DEFAULT_CONFIGS = {
     'host': '127.0.0.1',
     'port': 50166,
-    'auth': 'manialwaysforgettoupdatethisongithub',
+    'auth': 'youshallnotpass',
     'ssl': False
 }
 
@@ -53,7 +53,7 @@ class Salad(EventEmitter):
                  '_state_manager', '_restoring_players')
 
     def __init__(self, client, nodes, opts=None):
-        super().__init__(max_listeners=1000)  
+        super().__init__(max_listeners=1000)
 
         if not client or not nodes:
             return
@@ -70,7 +70,7 @@ class Salad(EventEmitter):
         self.version = "1.0.0"
         self._state_manager = None
         self._restoring_players = False
-        
+
         if opts and opts.get('enableReconnect', True):
             from .PlayerStateManager import PlayerStateManager
             state_file = opts.get('stateFile', 'player_states.jsonl')
@@ -103,17 +103,17 @@ class Salad(EventEmitter):
 
         return self
 
-    async def _voice_connect_for_restore(self, guild_id: int, voice_channel_id: str, 
+    async def _voice_connect_for_restore(self, guild_id: int, voice_channel_id: str,
                                          deaf: bool = True, mute: bool = False) -> bool:
         """
         Voice connection callback for PlayerStateManager restoration.
-        
+
         Args:
             guild_id: Guild ID to connect in
             voice_channel_id: Voice channel ID to connect to
             deaf: Whether to self-deafen
             mute: Whether to self-mute
-            
+
         Returns:
             bool: True if connection was successful
         """
@@ -122,12 +122,12 @@ class Salad(EventEmitter):
             if not guild:
                 logger.warning(f"Guild {guild_id} not found for voice restoration")
                 return False
-            
+
             voice_channel = guild.get_channel(int(voice_channel_id))
             if not voice_channel:
                 logger.warning(f"Voice channel {voice_channel_id} not found in guild {guild_id}")
                 return False
-            
+
             if guild.voice_client:
                 if guild.voice_client.channel.id == int(voice_channel_id):
                     logger.info(f"Already connected to voice channel {voice_channel_id}")
@@ -135,7 +135,7 @@ class Salad(EventEmitter):
                 else:
                     await guild.voice_client.disconnect(force=True)
                     await asyncio.sleep(0.5)
-            
+
             voice_client = await voice_channel.connect(
                 cls=SaladVoiceClient,
                 timeout=30.0,
@@ -143,10 +143,10 @@ class Salad(EventEmitter):
                 self_deaf=deaf,
                 self_mute=mute
             )
-            
+
             logger.info(f"Connected to voice channel {voice_channel_id} in guild {guild_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to connect to voice for guild {guild_id}: {e}")
             return False
@@ -180,7 +180,7 @@ class Salad(EventEmitter):
     async def _cleanup_voice_connection(self, guild_id: int) -> None:
         """
         Cleanup voice connection for a guild.
-        
+
         Args:
             guild_id: The guild ID to cleanup voice for
         """
@@ -196,7 +196,7 @@ class Salad(EventEmitter):
         """
         Create a connection and player for a guild.
         This handles Discord voice connection using SaladVoiceClient.
-        
+
         Args:
             opts: Options dict containing:
                 - guildId: Guild ID (required)
@@ -205,7 +205,7 @@ class Salad(EventEmitter):
                 - deaf: Self-deafen (default: True)
                 - mute: Self-mute (default: False)
                 - volume: Initial volume (default: 100)
-        
+
         Returns:
             Optional[Player]: Created player or None
         """
@@ -253,7 +253,7 @@ class Salad(EventEmitter):
             try:
                 deaf = opts.get('deaf', True)
                 mute = opts.get('mute', False)
-                
+
                 voice_client = await voice_channel.connect(
                     cls=SaladVoiceClient,
                     timeout=30.0,
@@ -261,7 +261,7 @@ class Salad(EventEmitter):
                     self_deaf=deaf,
                     self_mute=mute
                 )
-                
+
                 logger.info(f"Connected to voice channel {voice_channel_id} in guild {gid}")
             except Exception as e:
                 logger.error(f"Failed to connect to voice channel: {e}")
@@ -270,12 +270,12 @@ class Salad(EventEmitter):
         for node in self.nodes:
             if node.connected and node.sessionId:
                 player = await self.createPlayer(node, opts)
-                
+
                 if player and guild.voice_client:
                     if isinstance(guild.voice_client, SaladVoiceClient):
                         guild.voice_client.set_player(player)
                         logger.info(f"Linked SaladVoiceClient to player for guild {gid}")
-                
+
                 return player
 
         return None
