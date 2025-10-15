@@ -90,7 +90,7 @@ class Player:
         self._voiceCleanupCallback: Optional[Callable] = None
         self._kickCheckTask: Optional[asyncio.Task] = None
         self._lastVoiceChannelId: Optional[str] = None
-        self._voice_client: Optional[Any] = None 
+        self._voice_client: Optional[Any] = None
 
     def setVoiceCleanupCallback(self, callback: Callable) -> None:
         """Set voice cleanup callback."""
@@ -99,7 +99,7 @@ class Player:
     def setVoiceClient(self, voice_client: Any) -> None:
         """
         Set the voice client reference for this player.
-        
+
         Args:
             voice_client: SaladVoiceClient instance
         """
@@ -109,19 +109,19 @@ class Player:
     def getVoiceClient(self) -> Optional[Any]:
         """
         Get the voice client for this player.
-        
+
         Returns:
             Optional[Any]: SaladVoiceClient instance or None
         """
         if self._voice_client:
             return self._voice_client
-        
+
         if self.salad and self.salad.client and self.guildId:
             guild = self.salad.client.get_guild(self.guildId)
             if guild and guild.voice_client:
                 self._voice_client = guild.voice_client
                 return self._voice_client
-        
+
         return None
 
     def isVoiceReady(self) -> bool:
@@ -154,11 +154,11 @@ class Player:
             self._lastVoiceUpdate = {}
 
         self._lastVoiceChannelId = str(vc) if vc else None
-        
+
         voice_client = self.getVoiceClient()
         if voice_client:
             logger.info(f"Voice client connected for guild {self.guildId}")
-        
+
         self.salad.emit('playerConnect', self)
 
     async def handleVoiceStateUpdate(self, data: Dict) -> None:
@@ -313,6 +313,9 @@ class Player:
             if self.destroyed or self._destroying:
                 return
 
+            # wait some secs for voice state to be ready
+            await asyncio.sleep(0.5)
+
             if not self.isVoiceReady() or not self.connected:
                 logger.warning(f"Cannot play - voice not ready for guild {self.guildId}")
                 return
@@ -426,7 +429,7 @@ class Player:
     async def pause(self, paused: bool = True) -> None:
         """
         Set pause state.
-        
+
         Args:
             paused: True to pause, False to resume. Defaults to True.
         """
